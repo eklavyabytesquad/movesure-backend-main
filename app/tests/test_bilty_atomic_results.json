@@ -1,0 +1,96 @@
+{
+  "timestamp": "2026-04-27T02:30:31Z",
+  "base_url": "http://localhost:8000/v1",
+  "company_id": "815fcdb9-c36b-4288-9ed3-8210eaf40332",
+  "branch_id": "0c15b4c4-3d14-4c68-af43-c8ce7e738fd7",
+  "total": 17,
+  "passed": 17,
+  "failed": 0,
+  "checks": [
+    {
+      "label": "Create bilty book",
+      "passed": true,
+      "detail": "book_id=9c8e1949-c616-4f4d-995b-1508c989d232"
+    },
+    {
+      "label": "Create consignor: Sharma Traders",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "label": "Create consignor: Patel Enterprises",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "label": "Create consignee: Delhi Distributors",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "label": "Create consignee: Chennai Clearing",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "label": "Round-1 (3 concurrent): 3 GR claims \u2192 all 3 returned",
+      "passed": true,
+      "detail": "got 3 valid responses"
+    },
+    {
+      "label": "Round-1 (3 concurrent): GR strings unique (no duplicates)",
+      "passed": true,
+      "detail": "unique=3 / expected=3  values=['TST/0001', 'TST/0002', 'TST/0003']"
+    },
+    {
+      "label": "Round-1 (3 concurrent): GR integers unique (no duplicates)",
+      "passed": true,
+      "detail": "unique=3 / expected=3 values=[1, 2, 3]"
+    },
+    {
+      "label": "Round-1 (3 concurrent): No errors on GR claim",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "label": "Round-1 (3 concurrent): All 3 bilties created (status 201)",
+      "passed": true,
+      "detail": "created=3 failed=0"
+    },
+    {
+      "label": "Round-1 (3 concurrent): Bilty GR strings unique",
+      "passed": true,
+      "detail": "unique=3"
+    },
+    {
+      "label": "Round-2 (6 concurrent): 6 GR claims \u2192 all 6 returned",
+      "passed": true,
+      "detail": "got 6 valid responses"
+    },
+    {
+      "label": "Round-2 (6 concurrent): GR strings unique (no duplicates)",
+      "passed": true,
+      "detail": "unique=6 / expected=6  values=['TST/0004', 'TST/0005', 'TST/0006', 'TST/0007', 'TST/0008', 'TST/0009']"
+    },
+    {
+      "label": "Round-2 (6 concurrent): GR integers unique (no duplicates)",
+      "passed": true,
+      "detail": "unique=6 / expected=6 values=[4, 5, 6, 7, 8, 9]"
+    },
+    {
+      "label": "Round-2 (6 concurrent): No errors on GR claim",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "label": "Round-2 (6 concurrent): All 6 bilties created (status 201)",
+      "passed": true,
+      "detail": "created=6 failed=0"
+    },
+    {
+      "label": "Round-2 (6 concurrent): Bilty GR strings unique",
+      "passed": true,
+      "detail": "unique=6"
+    }
+  ]
+}
