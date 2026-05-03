@@ -17,11 +17,22 @@ from app.services.logs.service import enqueue, log_worker
 from app.services.ewaybill.token_service import load_jwt_token
 
 # ── Logging setup ─────────────────────────────────────────────
+# stream=sys.stdout ensures logs appear immediately in Coolify
+import sys
+
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
+    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
+    stream=sys.stdout,
+    force=True,   # override any previously set handlers (e.g. from gunicorn)
 )
+
+# Pipe uvicorn & gunicorn internal logs through the same handler
+for _name in ("uvicorn", "uvicorn.error", "uvicorn.access", "gunicorn", "gunicorn.error", "gunicorn.access"):
+    logging.getLogger(_name).handlers = []
+    logging.getLogger(_name).propagate = True
+
 logger = logging.getLogger("movesure")
 
 # ── Lifespan: start/stop background log worker ────────────────
@@ -284,7 +295,12 @@ app.include_router(fleet.router, prefix="/v1")
 app.include_router(ewaybill.router, prefix="/v1")
 
 
-# ── Health check ──────────────────────────────────────────────
+# ── Root + Health check ───────────────────────────────────────
+@app.get("/", tags=["System"])
+def root():
+    return {"status": "ok", "service": "MoveSure API", "version": "1.0.0"}
+
+
 @app.get("/health", tags=["System"])
 def health():
     return {"status": "ok"}

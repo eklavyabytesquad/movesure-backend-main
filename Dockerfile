@@ -2,6 +2,10 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Ensure Python output is sent straight to stdout (visible immediately in Coolify logs)
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
 # Install system deps required by some Python packages (e.g. Pillow, barcode)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libzbar0 \
@@ -28,4 +32,6 @@ CMD ["gunicorn", "main:app", \
      "--timeout", "120", \
      "--graceful-timeout", "30", \
      "--access-logfile", "-", \
-     "--error-logfile", "-"]
+     "--error-logfile", "-", \
+     "--log-level", "info", \
+     "--capture-output"]
