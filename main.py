@@ -72,7 +72,9 @@ app.add_middleware(
         "https://movesure-frontend-psf4.vercel.app", # add any preview URLs as needed
         "https://www.movesure.in",              # custom domain (if set)
         "https://movesure.io",
-        "https://rgtlogistics.movesure.io"
+        "https://rgtlogistics.movesure.io",
+        "http://d12az6n9u18fjw0qdbxlw40u.46.202.162.119.sslip.io",
+        "https://d12az6n9u18fjw0qdbxlw40u.46.202.162.119.sslip.io",
     ],
     allow_credentials=True,
     allow_methods=["*"],
