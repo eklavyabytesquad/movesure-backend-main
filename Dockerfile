@@ -18,13 +18,13 @@ COPY . .
 RUN useradd -r appuser && chown -R appuser /app
 USER appuser
 
-EXPOSE 5000
+EXPOSE 8000
 
 # Gunicorn + Uvicorn workers — 2 workers, 120 s timeout
 CMD ["gunicorn", "main:app", \
      "-k", "uvicorn.workers.UvicornWorker", \
      "-w", "2", \
-     "--bind", "0.0.0.0:5000", \
+     "--bind", "0.0.0.0:8000", \
      "--timeout", "120", \
      "--graceful-timeout", "30", \
      "--access-logfile", "-", \
