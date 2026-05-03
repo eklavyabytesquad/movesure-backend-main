@@ -38,21 +38,25 @@ def update_transporter(
 
     ewb_number = str(payload["eway_bill_number"])
     transporter_id = payload.get("transporter_id")
+    pdf_url = msg.get("url") or msg.get("pdfUrl") or msg.get("pdf_url")
 
     if company_id and branch_id and user_id:
-        # patch transporter fields on the existing record
+        # patch transporter fields + pdf_url on the existing record
+        field_updates: dict = {
+            "transporter_id":   transporter_id,
+            "transporter_name": payload.get("transporter_name"),
+            "raw_response":     data,
+        }
+        if pdf_url:
+            field_updates["pdf_url"] = pdf_url
         update_ewb_record_fields(
             company_id=company_id,
             eway_bill_number=ewb_number,
-            updates={
-                "transporter_id":   transporter_id,
-                "transporter_name": payload.get("transporter_name"),
-                "raw_response":     data,
-            },
+            updates=field_updates,
         )
         # log event — fetch record id for FK
         existing = get_ewb_record(company_id, ewb_number)
-        ewb_id = existing.get("id") if existing else None
+        ewb_id = existing.get("ewb_id") if existing else None
         if ewb_id:
             insert_event(
                 ewb_id=ewb_id,
@@ -70,8 +74,8 @@ def update_transporter(
         "message":          "Transporter ID updated successfully",
         "eway_bill_number": ewb_number,
         "transporter_id":   transporter_id,
-        "update_date":      msg.get("updDate") or msg.get("update_date"),
-        "pdf_url":          msg.get("pdfUrl") or msg.get("pdf_url"),
+        "update_date":      msg.get("transUpdateDate") or msg.get("updDate") or msg.get("update_date"),
+        "pdf_url":          pdf_url,
         "data":             msg,
     }
 
@@ -112,7 +116,7 @@ def update_transporter_with_pdf(
             },
         )
         existing = get_ewb_record(company_id, ewb_number)
-        ewb_id = existing.get("id") if existing else None
+        ewb_id = existing.get("ewb_id") if existing else None
         if ewb_id:
             insert_event(
                 ewb_id=ewb_id,

@@ -16,6 +16,7 @@ from app.services.ewaybill.db import (
     save_consolidated,
     link_ewbs_to_cewb,
 )
+from app.services.utils.supabase import get_client
 
 logger = logging.getLogger("movesure.ewaybill.generate")
 
@@ -114,6 +115,7 @@ def generate_consolidated_ewaybill(
     company_id: str | None = None,
     branch_id: str | None = None,
     user_id: str | None = None,
+    trip_sheet_id: str | None = None,
 ) -> dict:
     """
     Generate a Consolidated EWB and persist to DB.
@@ -138,7 +140,8 @@ def generate_consolidated_ewaybill(
 
     cewb_no   = msg.get("cEwbNo")
     cewb_date = msg.get("cEwbDate")
-    pdf_url   = msg.get("url") or msg.get("pdf_url")
+    raw_url   = msg.get("url") or msg.get("pdf_url")
+    pdf_url   = ("https://" + raw_url) if raw_url and not raw_url.startswith("http") else raw_url
 
     cewb_record = None
     if company_id and branch_id and user_id and cewb_no:
@@ -148,27 +151,42 @@ def generate_consolidated_ewaybill(
             cewb_number=str(cewb_no),
             cewb_date=cewb_date,
             vehicle_number=payload.get("vehicle_number"),
-            user_gstin=payload.get("userGstin"),
-            from_state=payload.get("state_of_consignor"),
+            place_of_consignor=payload.get("place_of_consignor"),
+            state_of_consignor=payload.get("state_of_consignor"),
+            mode_of_transport=payload.get("mode_of_transport"),
+            transporter_doc_number=payload.get("transporter_document_number"),
+            transporter_doc_date=payload.get("transporter_document_date"),
             ewb_numbers=ewb_numbers,
             raw_response=data,
             created_by=user_id,
             pdf_url=pdf_url,
+            trip_sheet_id=trip_sheet_id,
         )
-        cewb_id = cewb_record.get("id")
+        cewb_id = cewb_record.get("cewb_id")
         if cewb_id:
             link_ewbs_to_cewb(cewb_id, ewb_numbers, company_id)
-            insert_event(
-                ewb_id=cewb_id,
-                eway_bill_number=str(cewb_no),
-                event_type="CONSOLIDATED",
-                company_id=company_id,
-                branch_id=branch_id,
-                created_by=user_id,
-                raw_response=data,
-                event_data={"ewb_numbers": ewb_numbers},
-                notes=f"Consolidated EWB {cewb_no} created",
+            # Log a CONSOLIDATED event on each member ewb_record (ewb_events.ewb_id → ewb_records FK)
+            db = get_client()
+            member_records = (
+                db.table("ewb_records")
+                .select("ewb_id, eway_bill_number")
+                .eq("company_id", company_id)
+                .in_("eway_bill_number", ewb_numbers)
+                .execute()
             )
+            for member in (member_records.data or []):
+                insert_event(
+                    ewb_id=member["ewb_id"],
+                    eway_bill_number=member["eway_bill_number"],
+                    event_type="CONSOLIDATED",
+                    company_id=company_id,
+                    branch_id=branch_id,
+                    created_by=user_id,
+                    raw_response=data,
+                    reference_id=cewb_id,
+                    event_data={"cewb_number": str(cewb_no), "cewb_id": cewb_id},
+                    notes=f"Included in Consolidated EWB {cewb_no}",
+                )
 
     return {
         "status":  "success",
@@ -177,5 +195,5 @@ def generate_consolidated_ewaybill(
         "cEwbDate": cewb_date,
         "url":     pdf_url,
         "data":    msg,
-        **({"cewb_record_id": cewb_record.get("id")} if cewb_record else {}),
+        **({"cewb_record_id": cewb_record.get("cewb_id")} if cewb_record else {}),
     }

@@ -29,6 +29,85 @@ def get_ewb_record(company_id: str, eway_bill_number: str) -> dict | None:
     return res.data if res.data else None
 
 
+def get_ewbs_by_bilty(company_id: str, bilty_id: str) -> list[dict]:
+    """Return all ewb_records linked to a bilty, newest first."""
+    db = get_client()
+    res = (
+        db.table("ewb_records")
+        .select("*")
+        .eq("company_id", company_id)
+        .eq("bilty_id", bilty_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return res.data or []
+
+
+def get_ewbs_by_challan(company_id: str, challan_id: str) -> list[dict]:
+    """
+    Return all ewb_records for a challan by joining through bilty.
+    ewb_records.challan_id is not populated — bilties carry the challan_id.
+    """
+    db = get_client()
+    # Step 1: get all bilty_ids in this challan
+    bilties = (
+        db.table("bilty")
+        .select("bilty_id")
+        .eq("company_id", company_id)
+        .eq("challan_id", challan_id)
+        .eq("is_active", True)
+        .execute()
+    )
+    bilty_ids = [r["bilty_id"] for r in (bilties.data or [])]
+    if not bilty_ids:
+        return []
+    # Step 2: fetch ewb_records for all those bilties
+    res = (
+        db.table("ewb_records")
+        .select("*")
+        .eq("company_id", company_id)
+        .in_("bilty_id", bilty_ids)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return res.data or []
+
+
+def get_ewbs_by_challan_no(company_id: str, challan_no: str) -> list[dict]:
+    """
+    Same as get_ewbs_by_challan but accepts the human-readable challan number
+    (e.g. 'A00003') instead of a UUID.
+    """
+    db = get_client()
+    # Step 1: resolve challan_no → challan_id UUID
+    challan = (
+        db.table("challan")
+        .select("challan_id")
+        .eq("company_id", company_id)
+        .eq("challan_no", challan_no)
+        .limit(1)
+        .execute()
+    )
+    if not challan.data:
+        return []
+    challan_id = challan.data[0]["challan_id"]
+    return get_ewbs_by_challan(company_id, challan_id)
+
+
+def get_all_validated_ewbs(company_id: str, branch_id: str | None = None) -> list[dict]:
+    """Return all ewb_records for a company (optionally filtered by branch), newest first."""
+    db = get_client()
+    q = (
+        db.table("ewb_records")
+        .select("*")
+        .eq("company_id", company_id)
+        .order("created_at", desc=True)
+    )
+    if branch_id:
+        q = q.eq("branch_id", branch_id)
+    return q.execute().data or []
+
+
 def upsert_ewb_record(
     *,
     company_id: str,
@@ -41,27 +120,32 @@ def upsert_ewb_record(
     bilty_id: str | None = None,
     challan_id: str | None = None,
     cewb_id: str | None = None,
-    doc_number: str | None = None,
-    doc_date: str | None = None,
-    doc_type: str | None = None,
-    gstin_of_generator: str | None = None,
+    document_number: str | None = None,
+    document_date: str | None = None,
+    document_type: str | None = None,
+    generated_by_gstin: str | None = None,
     gstin_of_consignor: str | None = None,
     gstin_of_consignee: str | None = None,
     transporter_id: str | None = None,
     transporter_name: str | None = None,
     vehicle_number: str | None = None,
-    from_state: str | None = None,
-    to_state: str | None = None,
-    from_pincode: str | None = None,
-    to_pincode: str | None = None,
-    ewb_date: str | None = None,
+    vehicle_type: str | None = None,
+    state_of_consignor: str | None = None,
+    state_of_supply: str | None = None,
+    consignor_name: str | None = None,
+    pincode_of_consignor: str | None = None,
+    consignee_name: str | None = None,
+    pincode_of_consignee: str | None = None,
+    eway_bill_date: str | None = None,
     valid_upto: str | None = None,
     items_json: list[dict] | None = None,
     is_self_transfer: bool = False,
-    total_value: float | None = None,
+    total_invoice_value: float | None = None,
+    taxable_amount: float | None = None,
     supply_type: str | None = None,
-    transport_mode: str | None = None,
-    transport_distance: int | None = None,
+    sub_supply_type: str | None = None,
+    transportation_mode: str | None = None,
+    transportation_distance: int | None = None,
 ) -> dict:
     """Upsert a record into ewb_records (conflict on company_id + eway_bill_number)."""
     db = get_client()
@@ -75,31 +159,36 @@ def upsert_ewb_record(
         "created_by":          created_by,
         "is_self_transfer":    is_self_transfer,
     }
-    # optional fields — only include if provided
+    # optional fields — only include if provided (use actual DB column names)
     optional = {
-        "bilty_id": bilty_id,
-        "challan_id": challan_id,
-        "cewb_id": cewb_id,
-        "doc_number": doc_number,
-        "doc_date": doc_date,
-        "doc_type": doc_type,
-        "gstin_of_generator": gstin_of_generator,
-        "gstin_of_consignor": gstin_of_consignor,
-        "gstin_of_consignee": gstin_of_consignee,
-        "transporter_id": transporter_id,
-        "transporter_name": transporter_name,
-        "vehicle_number": vehicle_number,
-        "from_state": from_state,
-        "to_state": to_state,
-        "from_pincode": from_pincode,
-        "to_pincode": to_pincode,
-        "ewb_date": ewb_date,
-        "valid_upto": valid_upto,
-        "items_json": items_json,
-        "total_value": total_value,
-        "supply_type": supply_type,
-        "transport_mode": transport_mode,
-        "transport_distance": transport_distance,
+        "bilty_id":              bilty_id,
+        "challan_id":            challan_id,
+        "cewb_id":               cewb_id,
+        "document_number":       document_number,
+        "document_date":         document_date,
+        "document_type":         document_type,
+        "generated_by_gstin":    generated_by_gstin,
+        "gstin_of_consignor":    gstin_of_consignor,
+        "consignor_name":        consignor_name,
+        "pincode_of_consignor":  pincode_of_consignor,
+        "gstin_of_consignee":    gstin_of_consignee,
+        "consignee_name":        consignee_name,
+        "pincode_of_consignee":  pincode_of_consignee,
+        "transporter_id":        transporter_id,
+        "transporter_name":      transporter_name,
+        "vehicle_number":        vehicle_number,
+        "vehicle_type":          vehicle_type,
+        "state_of_consignor":    state_of_consignor,
+        "state_of_supply":       state_of_supply,
+        "eway_bill_date":        eway_bill_date,
+        "valid_upto":            valid_upto,
+        "items_json":            items_json,
+        "total_invoice_value":   total_invoice_value,
+        "taxable_amount":        taxable_amount,
+        "supply_type":           supply_type,
+        "sub_supply_type":       sub_supply_type,
+        "transportation_mode":   transportation_mode,
+        "transportation_distance": transportation_distance,
     }
     for k, v in optional.items():
         if v is not None:
@@ -182,16 +271,22 @@ def insert_validation_log(
     error_code = str(error_info.get("errorCodes", "") or "") or None
     error_desc = str(error_info.get("message", "") or "") or None
 
+    def _get(msg, *keys):
+        for k in keys:
+            v = msg.get(k) if msg else None
+            if v is not None and v != "":
+                return v
+        return None
+
     row: dict[str, Any] = {
         "ewb_id":             ewb_id,
         "eway_bill_number":   str(eway_bill_number),
         "version_no":         version_no,
-        # nic_status mirrors the NIC-returned status field
-        "nic_status":         msg.get("status") if msg else None,
-        "valid_upto":         msg.get("ewbValidTill") if msg else None,
-        "generated_by_gstin": msg.get("genGstin") if msg else None,
-        "vehicle_number":     msg.get("vehicleNo") if msg else None,
-        "transporter_id":     msg.get("transporterId") if msg else None,
+        "nic_status":         _get(msg, "status", "eway_bill_status"),
+        "valid_upto":         _get(msg, "ewbValidTill", "eway_bill_valid_date"),
+        "generated_by_gstin": _get(msg, "genGstin", "userGstin"),
+        "vehicle_number":     _get(msg, "vehicleNo", "vehicle_number"),
+        "transporter_id":     _get(msg, "transporterId", "transporter_id"),
         "error_code":         error_code,
         "error_description":  error_desc,
         "triggered_by":       triggered_by,
@@ -285,6 +380,12 @@ def insert_event(
 # ewb_consolidated
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _normalise_pdf_url(url: str | None) -> str | None:
+    if not url:
+        return url
+    return url if url.startswith("http") else "https://" + url
+
+
 def save_consolidated(
     *,
     company_id: str,
@@ -292,30 +393,53 @@ def save_consolidated(
     cewb_number: str,
     cewb_date: str | None,
     vehicle_number: str | None,
-    user_gstin: str | None,
-    from_state: str | None,
+    place_of_consignor: str | None,
+    state_of_consignor: str | None,
+    mode_of_transport: str | None,
+    transporter_doc_number: str | None,
+    transporter_doc_date: str | None,
     ewb_numbers: list[str],
     raw_response: dict,
     created_by: str,
     pdf_url: str | None = None,
+    trip_sheet_id: str | None = None,
 ) -> dict:
     """Insert a row into ewb_consolidated."""
     db = get_client()
-    row = {
-        "company_id":     company_id,
-        "branch_id":      branch_id,
-        "cewb_number":    cewb_number,
-        "cewb_date":      cewb_date,
-        "vehicle_number": vehicle_number,
-        "user_gstin":     user_gstin,
-        "from_state":     from_state,
-        "ewb_numbers":    ewb_numbers,
-        "pdf_url":        pdf_url,
-        "raw_response":   raw_response,
-        "created_by":     created_by,
+    row: dict[str, Any] = {
+        "company_id":             company_id,
+        "branch_id":              branch_id,
+        "cewb_number":            cewb_number,
+        "cewb_date":              cewb_date,
+        "vehicle_number":         vehicle_number or "",
+        "place_of_consignor":     place_of_consignor or "",
+        "state_of_consignor":     state_of_consignor or "",
+        "mode_of_transport":      str(mode_of_transport) if mode_of_transport is not None else "1",
+        "transporter_doc_number": transporter_doc_number or "",
+        "transporter_doc_date":   transporter_doc_date or "",
+        "ewb_numbers":            ewb_numbers,
+        "pdf_url":                _normalise_pdf_url(pdf_url),
+        "raw_response":           raw_response,
+        "created_by":             created_by,
     }
+    if trip_sheet_id:
+        row["trip_sheet_id"] = trip_sheet_id
     res = db.table("ewb_consolidated").insert(row).execute()
     return res.data[0] if res.data else row
+
+
+def get_cewbs_by_trip(company_id: str, trip_sheet_id: str) -> list[dict]:
+    """Return all consolidated EWBs for a trip sheet, newest first."""
+    db = get_client()
+    res = (
+        db.table("ewb_consolidated")
+        .select("*")
+        .eq("company_id", company_id)
+        .eq("trip_sheet_id", trip_sheet_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return res.data or []
 
 
 def link_ewbs_to_cewb(cewb_id: str, ewb_numbers: list[str], company_id: str) -> None:

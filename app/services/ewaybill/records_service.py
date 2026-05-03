@@ -15,26 +15,82 @@ from app.services.ewaybill.db import (
 logger = logging.getLogger("movesure.ewaybill.records")
 
 
+def _normalise_date(val: str | None) -> str | None:
+    """Convert DD/MM/YYYY or DD/MM/YYYY HH:MM:SS to ISO YYYY-MM-DD, pass through ISO dates unchanged."""
+    if not val:
+        return None
+    val = str(val).strip()
+    # Already ISO
+    if len(val) >= 10 and val[4] == "-":
+        return val[:10]
+    # DD/MM/YYYY [HH:MM:SS [AP]M]
+    try:
+        from datetime import datetime
+        for fmt in ("%d/%m/%Y %I:%M:%S %p", "%d/%m/%Y %H:%M:%S", "%d/%m/%Y"):
+            try:
+                return datetime.strptime(val.split(" AM")[0].split(" PM")[0].strip(), fmt.split(" ")[0]).strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+        # Try with full format
+        parts = val.split()
+        if len(parts) >= 1:
+            d, m, y = parts[0].split("/")
+            return f"{y}-{m.zfill(2)}-{d.zfill(2)}"
+    except Exception:
+        pass
+    return None  # don't save unparseable dates
+
+
+def _normalise_vehicle_type(val: str | None) -> str | None:
+    """Map NIC vehicle_type to DB allowed values: 'Regular', 'ODC', or NULL."""
+    if not val:
+        return None
+    v = str(val).strip().lower()
+    if v == "odc":
+        return "ODC"
+    if v:
+        return "Regular"
+    return None
+
+
 def _extract_record_fields(msg: dict) -> dict:
-    """Pull key fields from NIC GetEwayBill message."""
+    """Pull key fields from NIC GetEwayBill message.
+    Handles both camelCase (old NIC format) and snake_case (new NIC/Masters India format).
+    Returns keys that match actual ewb_records DB column names.
+    """
+    def _get(*keys):
+        for k in keys:
+            v = msg.get(k)
+            if v is not None and v != "":
+                return v
+        return None
+
     return {
-        "doc_number":          msg.get("docNo"),
-        "doc_date":            msg.get("docDate"),
-        "doc_type":            msg.get("docType"),
-        "gstin_of_generator":  msg.get("genGstin"),
-        "gstin_of_consignor":  msg.get("fromGstin"),
-        "gstin_of_consignee":  msg.get("toGstin"),
-        "transporter_id":      msg.get("transporterId"),
-        "transporter_name":    msg.get("transporterName"),
-        "vehicle_number":      msg.get("vehicleNo"),
-        "from_state":          str(msg.get("fromStateCode", "")) or None,
-        "to_state":            str(msg.get("toStateCode", "")) or None,
-        "ewb_date":            msg.get("ewbDt"),
-        "valid_upto":          msg.get("ewbValidTill"),
-        "supply_type":         msg.get("supplyType"),
-        "transport_mode":      str(msg.get("transportMode", "")) or None,
-        "transport_distance":  msg.get("actDistance"),
-        "total_value":         msg.get("totalValue"),
+        "document_number":       _get("docNo", "document_number"),
+        "document_date":         _normalise_date(_get("docDate", "document_date")),
+        "document_type":         _get("docType", "document_type"),
+        "generated_by_gstin":    _get("genGstin", "userGstin"),
+        "gstin_of_consignor":    _get("fromGstin", "gstin_of_consignor"),
+        "consignor_name":        _get("legal_name_of_consignor"),
+        "pincode_of_consignor":  _get("pincode_of_consignor"),
+        "state_of_consignor":    _get("state_of_consignor", "actual_from_state_name"),
+        "gstin_of_consignee":    _get("toGstin", "gstin_of_consignee"),
+        "consignee_name":        _get("legal_name_of_consignee"),
+        "pincode_of_consignee":  _get("pincode_of_consignee"),
+        "state_of_supply":       _get("state_of_supply", "actual_to_state_name"),
+        "transporter_id":        _get("transporterId", "transporter_id"),
+        "transporter_name":      _get("transporterName", "transporter_name"),
+        "vehicle_number":        _get("vehicleNo", "vehicle_number"),
+        "vehicle_type":          _normalise_vehicle_type(_get("vehicleType", "vehicle_type")),
+        "eway_bill_date":        _normalise_date(_get("ewbDt", "eway_bill_date")),
+        "valid_upto":            _normalise_date(_get("ewbValidTill", "eway_bill_valid_date")),
+        "supply_type":           _get("supplyType", "supply_type"),
+        "sub_supply_type":       _get("subSupplyType", "sub_supply_type"),
+        "transportation_mode":   _get("transportMode", "transportation_mode"),
+        "transportation_distance": _get("actDistance", "transportation_distance"),
+        "total_invoice_value":   _get("totalValue", "total_invoice_value"),
+        "taxable_amount":        _get("taxableAmount", "taxable_amount"),
+        "vehicle_type":          _normalise_vehicle_type(_get("vehicleType", "vehicle_type")),
     }
 
 
@@ -58,9 +114,11 @@ def fetch_ewaybill(
     force_refresh=True: always call NIC, save a new validation_log version.
     """
     # ── Short-circuit: return DB record if not forcing refresh ──
+    # Skip cache if raw_response is empty {} — means the record was manually
+    # seeded without a real NIC call, so we must fetch from NIC.
     if not force_refresh and company_id:
         existing = get_ewb_record(company_id, str(eway_bill_number))
-        if existing:
+        if existing and existing.get("raw_response"):
             history = get_validation_history(company_id, str(eway_bill_number))
             latest = history[0] if history else None
             return {

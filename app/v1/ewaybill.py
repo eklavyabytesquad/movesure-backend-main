@@ -62,7 +62,7 @@ from app.services.ewaybill.settings_service import (
 )
 from app.services.ewaybill.token_service import MI_USERNAME
 from app.services.ewaybill.pdf_service import generate_ewb_pdf_from_record
-from app.services.ewaybill.db import get_ewb_record, get_validation_history
+from app.services.ewaybill.db import get_ewb_record, get_validation_history, get_ewbs_by_bilty, get_ewbs_by_challan, get_ewbs_by_challan_no, get_all_validated_ewbs, get_cewbs_by_trip
 
 logger = logging.getLogger("movesure.ewaybill")
 
@@ -253,6 +253,59 @@ def ewb_validation_history(
 
 
 # ============================================================================
+# FETCH EWB RECORDS BY BILTY / CHALLAN
+# ============================================================================
+
+@router.get("/records", summary="List saved EWB records for a bilty, challan, or all", response_model=None)
+def list_ewb_records(
+    bilty_id: str | None = Query(None, description="Bilty UUID — returns EWBs for this bilty"),
+    challan_id: str | None = Query(None, description="Challan UUID — returns all EWBs linked to bilties in this challan"),
+    challan_no: str | None = Query(None, description="Challan number e.g. 'A00003' — resolves to UUID automatically"),
+    all: bool = Query(False, description="Set true to return all validated EWBs for your branch"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Fetch E-Way Bill records from `ewb_records`.
+
+    Modes (pass exactly one):
+    - `bilty_id` — EWBs for a single bilty/LR
+    - `challan_id` — EWBs for all bilties in a challan (UUID)
+    - `challan_no` — EWBs for all bilties in a challan (e.g. 'A00003')
+    - `all=true` — Every validated EWB for your branch
+
+    **Note**: EWBs are linked to bilties, not directly to challans.
+    The challan queries work by finding all bilties in the challan first.
+    """
+    company_id, branch_id, _ = _ctx(user)
+
+    if not any([bilty_id, challan_id, challan_no, all]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "Provide one of: bilty_id, challan_id, challan_no, or all=true"},
+        )
+
+    if bilty_id:
+        results = get_ewbs_by_bilty(company_id, bilty_id)
+        filter_used = f"bilty_id={bilty_id}"
+    elif challan_no:
+        results = get_ewbs_by_challan_no(company_id, challan_no)
+        filter_used = f"challan_no={challan_no}"
+    elif challan_id:
+        results = get_ewbs_by_challan(company_id, challan_id)
+        filter_used = f"challan_id={challan_id}"
+    else:
+        results = get_all_validated_ewbs(company_id, branch_id)
+        filter_used = "all"
+
+    return {
+        "status":       "success",
+        "filter":       filter_used,
+        "count":        len(results),
+        "records":      results,
+    }
+
+
+# ============================================================================
 # GSTIN / TRANSPORTER LOOKUP  (read-only, no DB write)
 # ============================================================================
 
@@ -374,6 +427,7 @@ class ConsolidatedEWBRequest(BaseModel):
     transporter_document_date: str       # DD/MM/YYYY
     data_source: str = "E"
     list_of_eway_bills: list             # list of EWB numbers (str) or objects
+    trip_sheet_id: str | None = None     # optional — links CEWB to a trip sheet
 
 
 @router.post("/consolidate", summary="Generate a Consolidated E-Way Bill", response_model=None)
@@ -393,9 +447,38 @@ def consolidate_ewb(body: ConsolidatedEWBRequest, user: dict = Depends(get_curre
         return generate_consolidated_ewaybill(
             payload,
             company_id=company_id, branch_id=branch_id, user_id=user_id,
+            trip_sheet_id=body.trip_sheet_id,
         )
     except Exception as exc:
         _handle_error(exc)
+
+
+# ============================================================================
+# FETCH CONSOLIDATED EWBs
+# ============================================================================
+
+@router.get("/consolidated", summary="List consolidated EWBs for a trip sheet", response_model=None)
+def list_consolidated_ewbs(
+    trip_sheet_id: str = Query(..., description="Trip sheet UUID (challan_trip_sheet.trip_sheet_id)"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Returns all consolidated EWBs created for a trip sheet.
+
+    Each record includes:
+    - `cewb_number`   — the NIC-assigned consolidated EWB number
+    - `pdf_url`       — direct download link for the CEWB PDF
+    - `cewb_status`   — ACTIVE / CANCELLED / EXPIRED
+    - `vehicle_number`, `cewb_date`, `ewb_numbers` (member EWB list)
+    """
+    company_id, _, _ = _ctx(user)
+    records = get_cewbs_by_trip(company_id, trip_sheet_id)
+    return {
+        "status":        "success",
+        "trip_sheet_id": trip_sheet_id,
+        "count":         len(records),
+        "consolidated":  records,
+    }
 
 
 # ============================================================================
