@@ -15,6 +15,7 @@ from app.services.challan.service import (
     get_book_for_route,
     # Trip Sheet
     create_trip_sheet, list_trip_sheets, get_trip_sheet_with_challans,
+    list_trip_sheet_challans,
     update_trip_sheet, dispatch_trip_sheet, arrive_trip_sheet,
     # Challan
     create_challan, list_challans, get_challan_with_bilties, update_challan,
@@ -22,7 +23,7 @@ from app.services.challan.service import (
     dispatch_challan, arrive_hub_challan,
     add_bilty_to_challan, remove_bilty_from_challan,
     move_to_trip_sheet, remove_from_trip_sheet,
-    list_challan_bilties, list_available_bilties,
+    list_challan_bilties, list_available_bilties, list_draft_bilties,
 )
 
 router = APIRouter(prefix="/challan", tags=["Challan"])
@@ -519,6 +520,30 @@ def api_get_trip_sheet(
     return sheet
 
 
+@router.get(
+    "/trip-sheet/{trip_sheet_id}/challans",
+    summary="List all challans in a trip sheet (cross-branch view)",
+)
+def api_trip_sheet_challans(
+    trip_sheet_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Returns every challan attached to this trip sheet, across all branches.
+    Each challan includes:
+    - `is_mine`: true when the challan belongs to the current user's branch
+    - `bilties`: lightweight list of bilties on that challan
+
+    Use this on the Trip Sheet detail page so Branch B can see
+    Branch A's challan (and vice versa) within the same truck trip.
+    """
+    return list_trip_sheet_challans(
+        trip_sheet_id,
+        current_user["company_id"],
+        viewing_branch_id=current_user["branch_id"],
+    )
+
+
 @router.put("/trip-sheet/{trip_sheet_id}", summary="Update trip sheet")
 def api_update_trip_sheet(
     trip_sheet_id: str,
@@ -594,7 +619,7 @@ def api_get_primary_challan(
     return challan
 
 
-@router.get("/available-bilties", summary="List bilties not yet assigned to any challan")
+@router.get("/available-bilties", summary="List SAVED bilties not yet assigned to any challan")
 def api_available_bilties(
     to_city_id: str | None = Query(None, description="Filter by destination city"),
     from_date:  str | None = Query(None, description="ISO date YYYY-MM-DD"),
@@ -606,6 +631,20 @@ def api_available_bilties(
     return list_available_bilties(
         current_user["company_id"], current_user["branch_id"],
         to_city_id, from_date, to_date, limit, offset,
+    )
+
+
+@router.get("/draft-bilties", summary="List DRAFT bilties for current branch")
+def api_draft_bilties(
+    from_date: str | None = Query(None, description="ISO date YYYY-MM-DD"),
+    to_date:   str | None = Query(None, description="ISO date YYYY-MM-DD"),
+    limit:     int        = Query(100, ge=1, le=500),
+    offset:    int        = Query(0, ge=0),
+    current_user: dict = Depends(get_current_user),
+):
+    return list_draft_bilties(
+        current_user["company_id"], current_user["branch_id"],
+        from_date, to_date, limit, offset,
     )
 
 

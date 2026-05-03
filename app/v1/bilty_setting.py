@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.middleware.auth import get_current_user
 from app.services.bilty_setting.service import (
@@ -99,32 +99,41 @@ class ConsigneeUpdate(BaseModel):
 # ══════════════════════════════════════════════════════════════
 
 class BookCreate(BaseModel):
-    book_name:    str | None = Field(None, max_length=100)
+    book_name:     str | None = Field(None, max_length=100)
     template_name: str | None = Field(None, max_length=100)
-    template_id:  str | None = None   # FK to bilty_template
-    bilty_type:   str        = Field("REGULAR", pattern="^(REGULAR|MANUAL)$")
-    party_scope:  str        = Field("COMMON", pattern="^(COMMON|CONSIGNOR|CONSIGNEE)$")
-    consignor_id: str | None = None
-    consignee_id: str | None = None
-    prefix:       str | None = Field(None, max_length=20)
-    from_number:  int        = Field(..., ge=1)
-    to_number:    int        = Field(..., ge=1)
-    digits:       int        = Field(4, ge=1, le=10)
-    postfix:      str | None = Field(None, max_length=20)
-    is_fixed:     bool       = False
-    auto_continue: bool      = False
-    metadata:     dict[str, Any] = {}
-    # Pre-fill defaults for the create-bilty form on the frontend.
+    template_id:   str | None = None   # FK to bilty_template
+    bilty_type:    str        = Field("REGULAR", pattern="^(REGULAR|MANUAL)$")
+    party_scope:   str        = Field("COMMON", pattern="^(COMMON|CONSIGNOR|CONSIGNEE)$")
+    consignor_id:  str | None = None
+    consignee_id:  str | None = None
+    prefix:        str | None = Field(None, max_length=20)
+    # REGULAR books: from_number and to_number are required.
+    # MANUAL books:  leave both out — there is no GR series.
+    from_number:   int | None = Field(None, ge=1)
+    to_number:     int | None = Field(None, ge=1)
+    digits:        int        = Field(4, ge=1, le=10)
+    postfix:       str | None = Field(None, max_length=20)
+    is_fixed:      bool       = False
+    auto_continue: bool       = False
+    metadata:      dict[str, Any] = {}
+    # Pre-fill defaults applied to the create-bilty form.
     # Supported keys: delivery_type, payment_mode, from_city_id, to_city_id, transport_id
     book_defaults: dict[str, Any] = {}
 
-    @field_validator("to_number")
-    @classmethod
-    def to_gte_from(cls, v: int, info) -> int:
-        from_number = info.data.get("from_number")
-        if from_number is not None and v < from_number:
-            raise ValueError("to_number must be >= from_number")
-        return v
+    @model_validator(mode="after")
+    def validate_series_for_type(self) -> "BookCreate":
+        if self.bilty_type == "REGULAR":
+            if self.from_number is None or self.to_number is None:
+                raise ValueError("from_number and to_number are required for REGULAR books")
+            if self.to_number < self.from_number:
+                raise ValueError("to_number must be >= from_number")
+        elif self.bilty_type == "MANUAL":
+            if self.from_number is not None or self.to_number is not None:
+                raise ValueError(
+                    "from_number and to_number must not be set for MANUAL books — "
+                    "there is no GR series. The GR is entered freely on each bilty."
+                )
+        return self
 
 
 class BookUpdate(BaseModel):

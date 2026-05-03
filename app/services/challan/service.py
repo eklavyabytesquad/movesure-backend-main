@@ -408,6 +408,52 @@ def get_trip_sheet_with_challans(trip_sheet_id: str, company_id: str) -> dict | 
     return sheet
 
 
+def list_trip_sheet_challans(
+    trip_sheet_id: str,
+    company_id: str,
+    viewing_branch_id: str | None = None,
+) -> list:
+    """
+    Return all challans attached to a trip sheet, across all branches.
+    Each challan gets an `is_mine` boolean flag so the frontend can
+    visually separate the current branch's challan from others.
+    Also attaches a lightweight `bilties` list to each challan.
+    """
+    db = get_client()
+    challans = (
+        db.table("challan")
+        .select("*")
+        .eq("trip_sheet_id", trip_sheet_id)
+        .eq("company_id", company_id)
+        .eq("is_active", True)
+        .order("branch_id")
+        .order("created_at")
+        .execute()
+        .data or []
+    )
+    for ch in challans:
+        ch["is_mine"] = (viewing_branch_id is not None
+                         and ch.get("branch_id") == viewing_branch_id)
+        bilties = (
+            db.table("bilty")
+            .select(
+                "bilty_id,gr_no,bilty_date,"
+                "consignor_name,consignee_name,"
+                "from_city_id,to_city_id,"
+                "no_of_pkg,weight,total_amount,"
+                "delivery_type,payment_mode,status"
+            )
+            .eq("challan_id", ch["challan_id"])
+            .eq("company_id", company_id)
+            .eq("is_active", True)
+            .order("created_at")
+            .execute()
+            .data or []
+        )
+        ch["bilties"] = bilties
+    return challans
+
+
 def update_trip_sheet(trip_sheet_id: str, company_id: str, data: dict) -> dict:
     db = get_client()
     res = (
@@ -845,7 +891,7 @@ def list_available_bilties(
     offset: int = 0,
 ) -> list:
     """
-    Bilties that are saved/draft and not yet assigned to any challan.
+    Bilties that are SAVED (not draft) and not yet assigned to any challan.
     These are the bilties eligible for challan assignment.
     """
     db = get_client()
@@ -866,7 +912,7 @@ def list_available_bilties(
         .eq("branch_id", branch_id)
         .eq("is_active", True)
         .is_("challan_id", "null")
-        .in_("status", ["SAVED", "DRAFT"])
+        .eq("status", "SAVED")
         .order("bilty_date", desc=True)
         .order("created_at", desc=True)
         .limit(limit)
@@ -874,6 +920,44 @@ def list_available_bilties(
     )
     if to_city_id:
         q = q.eq("to_city_id", to_city_id)
+    if from_date:
+        q = q.gte("bilty_date", from_date)
+    if to_date:
+        q = q.lte("bilty_date", to_date)
+    return q.execute().data or []
+
+
+def list_draft_bilties(
+    company_id: str,
+    branch_id: str,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list:
+    """Return DRAFT bilties for the branch (not yet saved/confirmed)."""
+    db = get_client()
+    q = (
+        db.table("bilty")
+        .select(
+            "bilty_id,gr_no,bilty_date,bilty_type,"
+            "consignor_name,consignor_mobile,"
+            "consignee_name,consignee_mobile,"
+            "from_city_id,to_city_id,"
+            "delivery_type,payment_mode,"
+            "contain,pvt_marks,"
+            "no_of_pkg,weight,actual_weight,total_amount,"
+            "invoice_no,invoice_value,"
+            "status,created_at"
+        )
+        .eq("company_id", company_id)
+        .eq("branch_id", branch_id)
+        .eq("is_active", True)
+        .eq("status", "DRAFT")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .offset(offset)
+    )
     if from_date:
         q = q.gte("bilty_date", from_date)
     if to_date:

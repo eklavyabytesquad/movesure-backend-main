@@ -1,7 +1,10 @@
+import logging
 from typing import Any
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger("movesure.bilty")
 
 from app.middleware.auth import get_current_user
 from app.services.bilty.service import (
@@ -15,6 +18,10 @@ from app.services.bilty.service import (
 from app.services.bilty_setting.service import (
     get_primary_book,
     get_primary_template,
+)
+from app.services.challan.service import (
+    get_primary_challan,
+    add_bilty_to_challan,
 )
 
 router = APIRouter(prefix="/bilty", tags=["Bilty"])
@@ -260,11 +267,23 @@ def api_create_bilty(
             gr = next_gr_no(data["book_id"])
             data["gr_no"] = gr["gr_no"]
 
-    elif body.bilty_type == "MANUAL" and not data.get("gr_no"):
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            "gr_no is required for MANUAL bilties.",
-        )
+    elif body.bilty_type == "MANUAL":
+        if not data.get("gr_no"):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "gr_no is required for MANUAL bilties.",
+            )
+        # Apply defaults from the primary MANUAL book (if one exists).
+        # book_defaults can carry: from_city_id, to_city_id,
+        # delivery_type, payment_mode, transport_id.
+        # Only fills a field when the request body did NOT already provide it.
+        manual_book = get_primary_book(company_id, branch_id, "MANUAL")
+        if manual_book:
+            data["book_id"] = manual_book["book_id"]
+            for key in ("delivery_type", "payment_mode",
+                        "from_city_id", "to_city_id", "transport_id"):
+                if not data.get(key) and manual_book.get("book_defaults", {}).get(key):
+                    data[key] = manual_book["book_defaults"][key]
 
     # Auto-apply primary template if none specified
     if not data.get("template_id"):
@@ -273,6 +292,27 @@ def api_create_bilty(
             data["template_id"] = tmpl["template_id"]
 
     result = create_bilty(data)
+
+    # Auto-assign to primary challan (only for SAVED bilties, silently skipped if none exists)
+    if data.get("status", "SAVED") == "SAVED":
+        primary_challan = get_primary_challan(company_id, branch_id)
+        if primary_challan:
+            try:
+                add_bilty_to_challan(
+                    primary_challan["challan_id"],
+                    result["bilty_id"],
+                    company_id,
+                    current_user["sub"],
+                )
+                result["challan_id"] = primary_challan["challan_id"]
+                result["challan_no"] = primary_challan["challan_no"]
+            except Exception:
+                # Non-fatal — bilty is created; challan assignment failed gracefully
+                logger.warning(
+                    "auto_assign_challan failed | bilty=%s challan=%s",
+                    result.get("bilty_id"), primary_challan["challan_id"],
+                )
+
     return {"message": "Bilty created.", "bilty": result}
 
 

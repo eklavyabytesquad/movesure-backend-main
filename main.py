@@ -12,8 +12,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.v1 import onboarding, auth, staff, master, iam, bilty_setting, bilty, challan, fleet
+from app.v1 import onboarding, auth, staff, master, iam, bilty_setting, bilty, challan, fleet, ewaybill
 from app.services.logs.service import enqueue, log_worker
+from app.services.ewaybill.token_service import load_jwt_token
 
 # ── Logging setup ─────────────────────────────────────────────
 logging.basicConfig(
@@ -28,6 +29,17 @@ logger = logging.getLogger("movesure")
 async def lifespan(app: FastAPI):
     worker_task = asyncio.create_task(log_worker())
     logger.info("Background log worker started")
+
+    # ── E-Way Bill: ensure Masters India token is live on startup ─────────
+    try:
+        token = load_jwt_token()
+        if token:
+            logger.info("Masters India JWT token is valid and ready")
+        else:
+            logger.warning("Masters India JWT token could not be obtained on startup")
+    except Exception as _ewb_exc:
+        logger.warning("Masters India token check failed on startup: %s", _ewb_exc)
+
     try:
         yield
     finally:
@@ -50,11 +62,17 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",   # React / Next.js dev
+        "http://localhost:3001",   # React / Next.js dev
         "http://localhost:5173",   # Vite dev
         "http://localhost:4200",   # Angular dev
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
+        # ── Production / Vercel ───────────────────────────────
+        "https://movesure.vercel.app",          # replace with your actual Vercel URL
+        "https://movesure-frontend-psf4.vercel.app", # add any preview URLs as needed
+        "https://www.movesure.in",              # custom domain (if set)
+        "https://movesure.io",
+        "https://rgtlogistics.movesure.io"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -261,6 +279,7 @@ app.include_router(bilty_setting.router, prefix="/v1")
 app.include_router(bilty.router, prefix="/v1")
 app.include_router(challan.router, prefix="/v1")
 app.include_router(fleet.router, prefix="/v1")
+app.include_router(ewaybill.router, prefix="/v1")
 
 
 # ── Health check ──────────────────────────────────────────────
