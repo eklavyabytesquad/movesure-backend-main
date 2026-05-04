@@ -206,12 +206,13 @@ async def log_requests(request: Request, call_next):
         elapsed_ms = int((time.time() - start) * 1000)
 
         logger.info(
-            "← [%s] %s %s | status: %d | %d ms",
+            "← [%s] %s %s | status: %d | %d ms | response: %s",
             correlation_id[:8],
             request.method,
             request.url.path,
             status_code,
             elapsed_ms,
+            json.dumps(resp_log, default=str)[:500] if resp_log is not None else "<non-json>",
         )
 
         # Extract user context:
