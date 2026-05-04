@@ -167,7 +167,7 @@ def create_book(data: dict) -> dict:
 
 def list_books(
     company_id: str,
-    branch_id: str,
+    branch_id: str | None,
     bilty_type: str | None = None,
     party_scope: str | None = None,
     is_active: bool = True,
@@ -178,10 +178,11 @@ def list_books(
         db.table("bilty_book")
         .select("*")
         .eq("company_id", company_id)
-        .eq("branch_id", branch_id)
         .eq("is_active", is_active)
         .order("created_at", desc=True)
     )
+    if branch_id:
+        q = q.eq("branch_id", branch_id)
     if bilty_type:
         q = q.eq("bilty_type", bilty_type)
     if party_scope:

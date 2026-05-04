@@ -208,7 +208,7 @@ def create_challan_book(data: dict) -> dict:
 
 def list_challan_books(
     company_id: str,
-    branch_id: str,
+    branch_id: str | None,
     route_scope: str | None = None,
     from_branch_id: str | None = None,
     to_branch_id: str | None = None,
@@ -221,10 +221,11 @@ def list_challan_books(
         db.table("challan_book")
         .select("*")
         .eq("company_id", company_id)
-        .eq("branch_id", branch_id)
         .eq("is_active", is_active)
         .order("created_at", desc=True)
     )
+    if branch_id:
+        q = q.eq("branch_id", branch_id)
     if route_scope:
         q = q.eq("route_scope", route_scope)
     if from_branch_id:

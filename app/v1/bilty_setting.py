@@ -421,18 +421,24 @@ def api_create_book(
 
 @router.get(
     "/books",
-    summary="List GR/LR books for the caller's branch",
+    summary="List GR/LR books. Super-admin sees all branches unless branch_id is supplied.",
 )
 def api_list_books(
     bilty_type:   str | None  = Query(None, pattern="^(REGULAR|MANUAL)$"),
     party_scope:  str | None  = Query(None, pattern="^(COMMON|CONSIGNOR|CONSIGNEE)$"),
     is_active:    bool        = Query(True),
     is_completed: bool | None = Query(None),
+    branch_id:    str | None  = Query(None, description="Super-admin: filter by branch UUID. Omit to see all branches."),
     current_user: dict        = Depends(get_current_user),
 ):
+    # Super-admin: use explicit branch_id filter if given, else None = all branches
+    # Regular users: always scoped to their own branch
+    effective_branch = _resolve_branch(current_user, branch_id) if branch_id else (
+        None if current_user.get("post_in_office") == "super_admin" else current_user["branch_id"]
+    )
     rows = list_books(
         company_id=current_user["company_id"],
-        branch_id=current_user["branch_id"],
+        branch_id=effective_branch,
         bilty_type=bilty_type,
         party_scope=party_scope,
         is_active=is_active,

@@ -425,7 +425,7 @@ def api_get_book_for_route(
 
 @router.get(
     "/book",
-    summary="List challan books",
+    summary="List challan books. Super-admin sees all branches unless branch_id is supplied.",
     description=(
         "List books scoped to the current branch. "
         "Use `route_scope=FIXED_ROUTE` + `from_branch_id` / `to_branch_id` to narrow to a specific leg."
@@ -439,10 +439,16 @@ def api_list_challan_books(
     is_active:      bool        = Query(True,  description="Return only active (non-deleted) books"),
     is_completed:   bool | None = Query(None,  description="True = exhausted books only; False = books with remaining numbers"),
     is_primary:     bool | None = Query(None,  description="True = only the primary book for this branch"),
+    branch_id:      str | None  = Query(None, description="Super-admin: filter by branch UUID. Omit to see all branches."),
     current_user: dict = Depends(get_current_user),
 ):
+    # Super-admin: explicit branch_id filter if given, else None = all branches
+    # Regular users: always scoped to their own branch
+    effective_branch = _resolve_branch(current_user, branch_id) if branch_id else (
+        None if current_user.get("post_in_office") == "super_admin" else current_user["branch_id"]
+    )
     return list_challan_books(
-        current_user["company_id"], current_user["branch_id"],
+        current_user["company_id"], effective_branch,
         route_scope, from_branch_id, to_branch_id, is_active, is_completed, is_primary,
     )
 
