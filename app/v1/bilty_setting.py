@@ -139,11 +139,10 @@ class BookCreate(BaseModel):
             if self.to_number < self.from_number:
                 raise ValueError("to_number must be >= from_number")
         elif self.bilty_type == "MANUAL":
-            if self.from_number is not None or self.to_number is not None:
-                raise ValueError(
-                    "from_number and to_number must not be set for MANUAL books — "
-                    "there is no GR series. The GR is entered freely on each bilty."
-                )
+            # Series is optional for MANUAL books. If supplied, validate the range.
+            if self.from_number is not None and self.to_number is not None:
+                if self.to_number < self.from_number:
+                    raise ValueError("to_number must be >= from_number")
         return self
 
 
@@ -157,6 +156,13 @@ class BookUpdate(BaseModel):
     is_completed:  bool | None = None
     metadata:      dict[str, Any] | None = None
     book_defaults: dict[str, Any] | None = None  # update pre-fill defaults
+    # Series fields — only meaningful for MANUAL books (optional range for reference).
+    # REGULAR books have an immutable series set at creation; these are ignored for them.
+    prefix:      str | None = Field(None, max_length=20)
+    from_number: int | None = Field(None, ge=1)
+    to_number:   int | None = Field(None, ge=1)
+    digits:      int | None = Field(None, ge=1, le=10)
+    postfix:     str | None = Field(None, max_length=20)
     # Super-admin only: move book to a different branch on update.
     branch_id:     str | None = Field(None, description="Super-admin: target branch UUID. Ignored for other roles.")
 
@@ -443,8 +449,25 @@ def api_list_books(
     return {"count": len(rows), "books": rows}
 
 
-# NOTE: /books/primary MUST be declared before /books/{book_id} so FastAPI
-#       does not treat the literal string "primary" as a book_id path param.
+# NOTE: /books/all and /books/primary MUST be declared before /books/{book_id} so
+#       FastAPI does not treat those literal strings as book_id path params.
+
+@router.get(
+    "/books/all",
+    summary="List all bilty books across every branch in the company",
+)
+def api_list_all_books(
+    bilty_type:   str | None  = Query(None, pattern="^(REGULAR|MANUAL)$"),
+    is_active:    bool        = Query(True),
+    current_user: dict        = Depends(get_current_user),
+):
+    rows = list_books(
+        company_id=current_user["company_id"],
+        branch_id=None,          # no branch filter → entire company
+        bilty_type=bilty_type,
+        is_active=is_active,
+    )
+    return {"count": len(rows), "books": rows}
 
 @router.get(
     "/books/primary",
@@ -483,10 +506,16 @@ def api_update_book(
     body: BookUpdate,
     current_user: dict = Depends(get_current_user),
 ):
-    data = {k: v for k, v in body.model_dump().items() if v is not None}
-    # Resolve branch_id for super_admin; strip it from the update payload
-    # (branch is a filter key, not a field to patch arbitrarily)
-    data.pop("branch_id", None)
+    # exclude_unset=True: only include fields the client explicitly sent,
+    # so nulls clear the field and omitted fields are left untouched.
+    data = body.model_dump(exclude_unset=True)
+    data.pop("branch_id", None)   # branch is immutable; strip even if sent
+    # Guard: do not let REGULAR book series fields be overwritten via PATCH.
+    # Fetch the book first and strip series fields if it's a REGULAR type.
+    existing = get_book(str(book_id), current_user["company_id"])
+    if existing and existing.get("bilty_type") == "REGULAR":
+        for _f in ("prefix", "from_number", "to_number", "digits", "postfix"):
+            data.pop(_f, None)
     data["updated_by"] = current_user["sub"]
     result = update_book(str(book_id), current_user["company_id"], data)
     return {"message": "Bilty book updated.", "book": result}

@@ -18,6 +18,7 @@ from app.services.bilty.service import (
 from app.services.bilty_setting.service import (
     get_primary_book,
     get_primary_template,
+    peek_gr_no,
 )
 from app.services.challan.service import (
     get_primary_challan,
@@ -192,6 +193,22 @@ class BiltyDeleteRequest(BaseModel):
 # NOTE: /next-gr          must come before /next-gr/{book_id}
 #       /next-gr/{book_id} must come before /{bilty_id}
 # ══════════════════════════════════════════════════════════════
+
+@router.get(
+    "/peek-gr/{book_id}",
+    summary="Preview next GR number for a book (read-only, does NOT consume the number)",
+    description=(
+        "Returns the next available GR number for the given book WITHOUT incrementing "
+        "current_number. Safe to call on every book-select in the UI. "
+        "Use /next-gr/{book_id} only when the bilty is actually being created."
+    ),
+)
+def api_peek_gr_no(
+    book_id: UUID,
+    current_user: dict = Depends(get_current_user),
+):
+    return peek_gr_no(str(book_id), current_user["company_id"])
+
 
 @router.get(
     "/next-gr",

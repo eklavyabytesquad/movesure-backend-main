@@ -449,6 +449,24 @@ def api_list_challan_books(
     )
 
 
+@router.get(
+    "/book/all",
+    summary="List all challan books across every branch in the company",
+)
+def api_list_all_challan_books(
+    route_scope: str | None  = Query(None, pattern="^(FIXED_ROUTE|OPEN)$"),
+    is_active:   bool        = Query(True),
+    current_user: dict = Depends(get_current_user),
+):
+    rows = list_challan_books(
+        current_user["company_id"],
+        branch_id=None,          # no branch filter → entire company
+        route_scope=route_scope,
+        is_active=is_active,
+    )
+    return {"count": len(rows), "books": rows}
+
+
 @router.get("/book/{book_id}", summary="Get challan book by ID")
 def api_get_challan_book(
     book_id: str,

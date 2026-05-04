@@ -152,6 +152,65 @@ def delete_consignee(consignee_id: str, company_id: str, updated_by: str) -> dic
 # BILTY BOOK
 # ══════════════════════════════════════════════════════════════
 
+def peek_gr_no(book_id: str, company_id: str) -> dict:
+    """
+    Read-only preview of the next GR number for a book.
+    Does NOT increment current_number — safe to call on every book selection.
+    Returns:
+        gr_no       — formatted string e.g. "MUM/0042/25"
+        gr_number   — raw integer e.g. 42
+        book_id
+        book_name
+        bilty_type  — "REGULAR" | "MANUAL"
+        is_exhausted — True when current_number >= to_number (for ranged books)
+    """
+    book = get_book(book_id, company_id)
+    if not book:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Bilty book not found")
+    if not book.get("is_active"):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Bilty book is inactive")
+
+    current = book.get("current_number")
+    from_no = book.get("from_number")
+    to_no   = book.get("to_number")
+
+    # No series defined (MANUAL book without a range)
+    if current is None and from_no is None:
+        return {
+            "gr_no":       None,
+            "gr_number":   None,
+            "book_id":     book_id,
+            "book_name":   book.get("book_name"),
+            "bilty_type":  book.get("bilty_type"),
+            "is_exhausted": False,
+            "has_series":  False,
+        }
+
+    # Next number to be issued
+    if current is None:
+        next_num = from_no
+    else:
+        next_num = current + 1
+
+    is_exhausted = bool(to_no and next_num > to_no)
+
+    # Format: prefix + zero-padded number + postfix
+    digits  = book.get("digits") or 4
+    prefix  = book.get("prefix") or ""
+    postfix = book.get("postfix") or ""
+    gr_no   = f"{prefix}{str(next_num).zfill(digits)}{postfix}" if not is_exhausted else None
+
+    return {
+        "gr_no":       gr_no,
+        "gr_number":   next_num if not is_exhausted else None,
+        "book_id":     book_id,
+        "book_name":   book.get("book_name"),
+        "bilty_type":  book.get("bilty_type"),
+        "is_exhausted": is_exhausted,
+        "has_series":  True,
+    }
+
+
 def create_book(data: dict) -> dict:
     logger.info("create_book | company=%s branch=%s type=%s", data.get("company_id"), data.get("branch_id"), data.get("bilty_type"))
     # current_number must start at from_number
