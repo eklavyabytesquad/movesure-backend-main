@@ -72,26 +72,8 @@ app = FastAPI(
 # Add origins your frontend runs on. Adjust before going to production.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",   # React / Next.js dev
-        "http://localhost:3001",
-        "http://localhost:5173",   # Vite dev
-        "http://localhost:4200",   # Angular dev
-        "http://localhost:8080",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:3001",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:8080",
-        # ── Production / Vercel ───────────────────────────────
-        "https://movesure.vercel.app",          # replace with your actual Vercel URL
-        "https://movesure-frontend-psf4.vercel.app", # add any preview URLs as needed
-        "https://www.movesure.in",              # custom domain (if set)
-        "https://movesure.io",
-        "https://rgtlogistics.movesure.io",
-        "http://d12az6n9u18fjw0qdbxlw40u.46.202.162.119.sslip.io",
-        "https://d12az6n9u18fjw0qdbxlw40u.46.202.162.119.sslip.io",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
