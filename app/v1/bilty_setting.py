@@ -26,12 +26,10 @@ router = APIRouter(prefix="/bilty-setting", tags=["Bilty Settings"])
 
 def _resolve_branch(user: dict, body_branch_id: str | None) -> str:
     """
-    Super-admins may override branch_id via the request body.
-    All other roles always use their own JWT branch.
+    Use body_branch_id if supplied (and different from the user's own branch),
+    otherwise fall back to the JWT branch. company_id is always from the JWT.
     """
-    if body_branch_id and user.get("post_in_office") == "super_admin":
-        return body_branch_id
-    return user["branch_id"]
+    return body_branch_id or user["branch_id"]
 
 
 # ══════════════════════════════════════════════════════════════
@@ -433,9 +431,7 @@ def api_list_books(
 ):
     # Super-admin: use explicit branch_id filter if given, else None = all branches
     # Regular users: always scoped to their own branch
-    effective_branch = _resolve_branch(current_user, branch_id) if branch_id else (
-        None if current_user.get("post_in_office") == "super_admin" else current_user["branch_id"]
-    )
+    effective_branch = _resolve_branch(current_user, branch_id) if branch_id else current_user["branch_id"]
     rows = list_books(
         company_id=current_user["company_id"],
         branch_id=effective_branch,
