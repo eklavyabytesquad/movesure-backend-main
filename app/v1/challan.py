@@ -29,6 +29,16 @@ from app.services.challan.service import (
 router = APIRouter(prefix="/challan", tags=["Challan"])
 
 
+def _resolve_branch(user: dict, body_branch_id: str | None) -> str:
+    """
+    Super-admins may override branch_id via the request body.
+    All other roles always use their own JWT branch.
+    """
+    if body_branch_id and user.get("post_in_office") == "super_admin":
+        return body_branch_id
+    return user["branch_id"]
+
+
 # ══════════════════════════════════════════════════════════════
 # Pydantic models — Template
 # ══════════════════════════════════════════════════════════════
@@ -119,6 +129,9 @@ class ChallanBookCreate(BaseModel):
         default={},
         description="Arbitrary key-value pairs for custom frontend/integration use"
     )
+    # Super-admin only: create this book under a specific branch.
+    # Regular users: this field is silently ignored.
+    branch_id: str | None = Field(None, description="Super-admin: target branch UUID. Ignored for other roles.")
 
     @model_validator(mode="after")
     def validate_route_scope(self) -> "ChallanBookCreate":
@@ -158,6 +171,8 @@ class ChallanBookUpdate(BaseModel):
         description="Set True to promote this book to primary (prefer using the /set-primary endpoint)"
     )
     metadata:      dict[str, Any] | None = None
+    # Super-admin only: reassign book to a different branch.
+    branch_id: str | None = Field(None, description="Super-admin: target branch UUID. Ignored for other roles.")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -224,6 +239,9 @@ class ChallanCreate(BaseModel):
     remarks:         str | None = None
     is_primary:      bool       = False
     metadata:        dict[str, Any] = {}
+    # Super-admin only: create this challan under a specific branch.
+    # Regular users: this field is silently ignored.
+    branch_id: str | None = Field(None, description="Super-admin: target branch UUID. Ignored for other roles.")
 
 
 class ChallanUpdate(BaseModel):
@@ -354,7 +372,7 @@ def api_create_challan_book(
 ):
     data = body.model_dump()
     data["company_id"] = current_user["company_id"]
-    data["branch_id"]  = current_user["branch_id"]
+    data["branch_id"]  = _resolve_branch(current_user, data.pop("branch_id", None))
     data["created_by"] = current_user["sub"]
     data["updated_by"] = current_user["sub"]
     return create_challan_book(data)
@@ -455,6 +473,7 @@ def api_update_challan_book(
     current_user: dict = Depends(get_current_user),
 ):
     data = {k: v for k, v in body.model_dump().items() if v is not None}
+    data.pop("branch_id", None)  # branch_id is a filter key, not patchable after creation
     data["updated_by"] = current_user["sub"]
     return update_challan_book(book_id, current_user["company_id"], data)
 
@@ -584,7 +603,7 @@ def api_create_challan(
 ):
     data = body.model_dump(exclude_none=True)
     company_id = current_user["company_id"]
-    branch_id  = current_user["branch_id"]
+    branch_id  = _resolve_branch(current_user, data.pop("branch_id", None))
     user_id    = current_user["sub"]
 
     # Auto-claim challan number from primary book if not provided

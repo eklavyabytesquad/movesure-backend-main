@@ -24,6 +24,16 @@ from app.services.bilty_setting.service import (
 router = APIRouter(prefix="/bilty-setting", tags=["Bilty Settings"])
 
 
+def _resolve_branch(user: dict, body_branch_id: str | None) -> str:
+    """
+    Super-admins may override branch_id via the request body.
+    All other roles always use their own JWT branch.
+    """
+    if body_branch_id and user.get("post_in_office") == "super_admin":
+        return body_branch_id
+    return user["branch_id"]
+
+
 # ══════════════════════════════════════════════════════════════
 # Pydantic models — Consignor
 # ══════════════════════════════════════════════════════════════
@@ -119,6 +129,9 @@ class BookCreate(BaseModel):
     # Pre-fill defaults applied to the create-bilty form.
     # Supported keys: delivery_type, payment_mode, from_city_id, to_city_id, transport_id
     book_defaults: dict[str, Any] = {}
+    # Super-admin only: override the branch this book is created under.
+    # Regular users: this field is silently ignored.
+    branch_id: str | None = Field(None, description="Super-admin: target branch UUID. Ignored for other roles.")
 
     @model_validator(mode="after")
     def validate_series_for_type(self) -> "BookCreate":
@@ -146,6 +159,8 @@ class BookUpdate(BaseModel):
     is_completed:  bool | None = None
     metadata:      dict[str, Any] | None = None
     book_defaults: dict[str, Any] | None = None  # update pre-fill defaults
+    # Super-admin only: move book to a different branch on update.
+    branch_id:     str | None = Field(None, description="Super-admin: target branch UUID. Ignored for other roles.")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -397,7 +412,7 @@ def api_create_book(
 
     data = body.model_dump()
     data["company_id"] = current_user["company_id"]
-    data["branch_id"]  = current_user["branch_id"]
+    data["branch_id"]  = _resolve_branch(current_user, data.pop("branch_id", None))
     data["created_by"] = current_user["sub"]
     data["updated_by"] = current_user["sub"]
     result = create_book(data)
@@ -467,6 +482,9 @@ def api_update_book(
     current_user: dict = Depends(get_current_user),
 ):
     data = {k: v for k, v in body.model_dump().items() if v is not None}
+    # Resolve branch_id for super_admin; strip it from the update payload
+    # (branch is a filter key, not a field to patch arbitrarily)
+    data.pop("branch_id", None)
     data["updated_by"] = current_user["sub"]
     result = update_book(str(book_id), current_user["company_id"], data)
     return {"message": "Bilty book updated.", "book": result}
