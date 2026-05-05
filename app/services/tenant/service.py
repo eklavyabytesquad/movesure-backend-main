@@ -38,7 +38,7 @@ def get_branch_by_id(branch_id: str, company_id: str) -> dict | None:
     db = get_client()
     res = (
         db.table("tenant_branches")
-        .select("branch_id,name,company_id,branch_code,branch_type")
+        .select("branch_id,name,company_id,branch_code,branch_type,address,mobile_number,owner_name,city_id,metadata,created_at,updated_at")
         .eq("branch_id", branch_id)
         .eq("company_id", company_id)
         .limit(1)
@@ -52,7 +52,7 @@ def list_branches(company_id: str) -> list[dict]:
     db = get_client()
     res = (
         db.table("tenant_branches")
-        .select("branch_id,name,branch_code,branch_type,address,metadata,created_at,updated_at")
+        .select("branch_id,name,branch_code,branch_type,address,mobile_number,owner_name,city_id,metadata,created_at,updated_at")
         .eq("company_id", company_id)
         .order("name")
         .execute()

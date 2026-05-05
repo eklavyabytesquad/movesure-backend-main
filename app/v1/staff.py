@@ -10,7 +10,7 @@ from app.services.iam.service import (
     list_staff,
     update_user,
 )
-from app.services.tenant.service import get_branch_by_id, list_branches
+from app.services.tenant.service import get_branch_by_id, list_branches, create_branch, update_branch
 
 router = APIRouter(prefix="/staff", tags=["Staff Management"])
 
@@ -35,6 +35,30 @@ class UpdateStaffRequest(BaseModel):
     password:       str | None = Field(None, min_length=8, description="Set a new password")
 
 
+# ── Branch request models ─────────────────────────────────────
+
+class BranchCreate(BaseModel):
+    name:          str            = Field(..., min_length=2)
+    branch_code:   str            = Field(..., min_length=2, max_length=50)
+    branch_type:   str            = Field("branch", pattern="^(primary|hub|branch)$")
+    address:       str | None     = None
+    mobile_number: str | None     = Field(None, max_length=20)
+    owner_name:    str | None     = Field(None, max_length=255)
+    city_id:       str | None     = None
+    metadata:      dict           = {}
+
+
+class BranchUpdate(BaseModel):
+    name:          str | None     = Field(None, min_length=2)
+    branch_code:   str | None     = Field(None, min_length=2, max_length=50)
+    branch_type:   str | None     = Field(None, pattern="^(primary|hub|branch)$")
+    address:       str | None     = None
+    mobile_number: str | None     = Field(None, max_length=20)
+    owner_name:    str | None     = Field(None, max_length=255)
+    city_id:       str | None     = None
+    metadata:      dict | None    = None
+
+
 # ── GET /v1/staff/branches — List branches for dropdown ──────
 
 @router.get(
@@ -50,6 +74,65 @@ def get_branches(current_user: dict = Depends(get_current_user)):
         "count":      len(branches),
         "branches":   branches,
     }
+
+
+# ── GET /v1/staff/branches/{branch_id} ───────────────────────
+
+@router.get(
+    "/branches/{branch_id}",
+    summary="Get a single branch by ID",
+)
+def get_branch(
+    branch_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    branch = get_branch_by_id(branch_id, current_user["company_id"])
+    if not branch:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Branch not found in your company.")
+    return branch
+
+
+# ── POST /v1/staff/branches — Create a branch ────────────────
+
+@router.post(
+    "/branches",
+    status_code=201,
+    summary="Create a new branch under your company",
+)
+def create_branch_api(
+    body: BranchCreate,
+    current_user: dict = Depends(get_current_user),
+):
+    data = body.model_dump(exclude_none=True)
+    data["company_id"] = current_user["company_id"]
+    data["created_by"] = current_user["sub"]
+    data["updated_by"] = current_user["sub"]
+    branch = create_branch(data)
+    return {"message": "Branch created successfully.", "branch": branch}
+
+
+# ── PATCH /v1/staff/branches/{branch_id} — Update a branch ──
+
+@router.patch(
+    "/branches/{branch_id}",
+    summary="Update branch details (name, address, mobile, owner, city, etc.)",
+)
+def update_branch_api(
+    branch_id: str,
+    body: BranchUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    existing = get_branch_by_id(branch_id, current_user["company_id"])
+    if not existing:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Branch not found in your company.")
+
+    data = body.model_dump(exclude_unset=True)
+    if not data:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No fields provided to update.")
+
+    data["updated_by"] = current_user["sub"]
+    branch = update_branch(branch_id, current_user["company_id"], data)
+    return {"message": "Branch updated successfully.", "branch": branch}
 
 
 # ── POST /v1/staff — Add a new staff member ───────────────────
