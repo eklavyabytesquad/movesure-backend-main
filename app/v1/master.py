@@ -32,19 +32,25 @@ router = APIRouter(prefix="/master", tags=["Master Data"])
 # ══════════════════════════════════════════════════════════════════════════════
 
 class BranchCreate(BaseModel):
-    name:        str            = Field(..., min_length=2, max_length=255)
-    branch_code: str            = Field(..., min_length=1, max_length=50, description="Must be unique within your company")
-    branch_type: str            = Field("branch", pattern="^(primary|hub|branch)$")
-    address:     str | None     = None
-    metadata:    dict[str, Any] = {}
+    name:          str            = Field(..., min_length=2, max_length=255)
+    branch_code:   str            = Field(..., min_length=1, max_length=50, description="Must be unique within your company")
+    branch_type:   str            = Field("branch", pattern="^(primary|hub|branch)$")
+    address:       str | None     = None
+    mobile_number: str | None     = None
+    owner_name:    str | None     = None
+    city_id:       str | None     = None
+    metadata:      dict[str, Any] = {}
 
 
 class BranchUpdate(BaseModel):
-    name:        str | None            = Field(None, min_length=2, max_length=255)
-    branch_code: str | None            = Field(None, min_length=1, max_length=50)
-    branch_type: str | None            = Field(None, pattern="^(primary|hub|branch)$")
-    address:     str | None            = None
-    metadata:    dict[str, Any] | None = None
+    name:          str | None            = Field(None, min_length=2, max_length=255)
+    branch_code:   str | None            = Field(None, min_length=1, max_length=50)
+    branch_type:   str | None            = Field(None, pattern="^(primary|hub|branch)$")
+    address:       str | None            = None
+    mobile_number: str | None            = None
+    owner_name:    str | None            = None
+    city_id:       str | None            = None
+    metadata:      dict[str, Any] | None = None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -91,7 +97,7 @@ def api_get_branch(branch_id: str, current_user: dict = Depends(get_current_user
     summary="Update a branch",
 )
 def api_update_branch(branch_id: str, body: BranchUpdate, current_user: dict = Depends(get_current_user)):
-    data = body.model_dump(exclude_none=True)
+    data = body.model_dump(exclude_unset=True)
     if not data:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No fields to update.")
     data["updated_by"] = current_user.get("sub")
