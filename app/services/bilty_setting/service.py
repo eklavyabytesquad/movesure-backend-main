@@ -154,15 +154,12 @@ def delete_consignee(consignee_id: str, company_id: str, updated_by: str) -> dic
 
 def peek_gr_no(book_id: str, company_id: str) -> dict:
     """
-    Read-only preview of the next GR number for a book.
+    Read-only preview of the next GR number for a MANUAL book.
     Does NOT increment current_number — safe to call on every book selection.
-    Returns:
-        gr_no       — formatted string e.g. "MUM/0042/25"
-        gr_number   — raw integer e.g. 42
-        book_id
-        book_name
-        bilty_type  — "REGULAR" | "MANUAL"
-        is_exhausted — True when current_number >= to_number (for ranged books)
+
+    Convention (same as REGULAR books):
+        current_number = the NEXT number to be issued.
+    So peek returns current_number directly (no +1 needed).
     """
     book = get_book(book_id, company_id)
     if not book:
@@ -186,15 +183,13 @@ def peek_gr_no(book_id: str, company_id: str) -> dict:
             "has_series":  False,
         }
 
-    # Next number to be issued
-    if current is None:
-        next_num = from_no
-    else:
-        next_num = current + 1
+    # current_number is the next number to issue (same convention as REGULAR).
+    # Fall back to from_number only if current is somehow NULL (shouldn't happen
+    # for properly initialised books, but guard anyway).
+    next_num = current if current is not None else from_no
 
     is_exhausted = bool(to_no and next_num > to_no)
 
-    # Format: prefix + zero-padded number + postfix
     digits  = book.get("digits") or 4
     prefix  = book.get("prefix") or ""
     postfix = book.get("postfix") or ""
@@ -211,10 +206,56 @@ def peek_gr_no(book_id: str, company_id: str) -> dict:
     }
 
 
+def advance_manual_book_counter(book_id: str, company_id: str, gr_no: str) -> None:
+    """
+    Called after a MANUAL bilty is saved.
+    Sets current_number = used_number + 1  ("next to issue" convention,
+    same as REGULAR books / fn_next_gr_no).
+    Fails silently — bilty is already saved; counter update is best-effort.
+    """
+    try:
+        book = get_book(book_id, company_id)
+        if not book or book.get("from_number") is None:
+            return  # no series — nothing to advance
+
+        prefix  = book.get("prefix") or ""
+        postfix = book.get("postfix") or ""
+
+        s = gr_no
+        if prefix and s.startswith(prefix):
+            s = s[len(prefix):]
+        if postfix and s.endswith(postfix):
+            s = s[:-len(postfix)]
+
+        try:
+            used_number = int(s)
+        except ValueError:
+            logger.warning("advance_manual_counter | could not parse number from gr_no=%s", gr_no)
+            return
+
+        next_number = used_number + 1   # advance past the number just used
+        current = book.get("current_number")
+
+        # Only write if we're actually moving the pointer forward
+        if current is None or next_number > current:
+            db = get_client()
+            db.table("bilty_book") \
+                .update({"current_number": next_number}) \
+                .eq("book_id", book_id) \
+                .eq("company_id", company_id) \
+                .execute()
+            logger.info("advance_manual_counter | book=%s current_number → %s", book_id, next_number)
+    except Exception as exc:
+        logger.warning("advance_manual_counter failed | book=%s | %s", book_id, exc)
+
+
 def create_book(data: dict) -> dict:
     logger.info("create_book | company=%s branch=%s type=%s", data.get("company_id"), data.get("branch_id"), data.get("bilty_type"))
-    # current_number must start at from_number
-    if "current_number" not in data and "from_number" in data:
+    # Both REGULAR and MANUAL: current_number starts at from_number.
+    # Convention: current_number = NEXT number to issue (same for both types).
+    # REGULAR: fn_next_gr_no reads current_number, returns it, then increments.
+    # MANUAL:  peek_gr_no reads current_number directly; advance sets current+1 after save.
+    if "current_number" not in data and data.get("from_number") is not None:
         data["current_number"] = data["from_number"]
     db = get_client()
     res = db.table("bilty_book").insert(data).execute()

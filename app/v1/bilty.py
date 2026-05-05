@@ -19,6 +19,7 @@ from app.services.bilty_setting.service import (
     get_primary_book,
     get_primary_template,
     peek_gr_no,
+    advance_manual_book_counter,
 )
 from app.services.challan.service import (
     get_primary_challan,
@@ -296,7 +297,9 @@ def api_create_bilty(
         # Only fills a field when the request body did NOT already provide it.
         manual_book = get_primary_book(company_id, branch_id, "MANUAL")
         if manual_book:
-            data["book_id"] = manual_book["book_id"]
+            # Only set book_id from primary if the body did NOT provide one explicitly
+            if not data.get("book_id"):
+                data["book_id"] = manual_book["book_id"]
             for key in ("delivery_type", "payment_mode",
                         "from_city_id", "to_city_id", "transport_id"):
                 if not data.get(key) and manual_book.get("book_defaults", {}).get(key):
@@ -309,6 +312,11 @@ def api_create_bilty(
             data["template_id"] = tmpl["template_id"]
 
     result = create_bilty(data)
+
+    # For MANUAL bilties: advance current_number on the book so peek_gr_no
+    # returns the correct NEXT number on the following creation.
+    if body.bilty_type == "MANUAL" and data.get("book_id"):
+        advance_manual_book_counter(data["book_id"], company_id, data["gr_no"])
 
     # Auto-assign to primary challan (only for SAVED bilties, silently skipped if none exists)
     if data.get("status", "SAVED") == "SAVED":
