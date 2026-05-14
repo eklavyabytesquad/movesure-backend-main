@@ -386,6 +386,25 @@ POST /v1/bilty  { gr_no: "MANUAL-001", bilty_type: "MANUAL", ... }
 | `discount_id` | UUID | FK to `bilty_discount`. Set when a discount is applied. |
 | `discount_percentage` | number 0-100 | Snapshot of the discount percentage at time of creation. |
 | `discount_amount` | number ≥ 0 | Computed discount amount = `total_amount * discount_percentage / 100` (capped). |
+| `consignor_mobile_numbers` | array of strings OR comma-separated string | Multiple phone numbers for consignor. Can be sent as: `["1234123415", "1231132415"]` (array) or `"1234123415,1231132415"` (comma-separated string). Whitespace is automatically trimmed. Stored as JSON array. |
+| `consignee_mobile_numbers` | array of strings OR comma-separated string | Multiple phone numbers for consignee. Can be sent as: `["1234123415", "1231132415"]` (array) or `"1234123415,1231132415"` (comma-separated string). Whitespace is automatically trimmed. Stored as JSON array. |
+| `transport_mobile_numbers` | array of strings OR comma-separated string | Multiple phone numbers for transport/vehicle. Can be sent as: `["1234123415", "1231132415"]` (array) or `"1234123415,1231132415"` (comma-separated string). Whitespace is automatically trimmed. Stored as JSON array. |
+
+**Example — bilty with multiple mobile numbers:**
+```json
+POST /v1/bilty
+{
+  "bilty_type": "MANUAL",
+  "gr_no": "1702",
+  "bilty_date": "2026-05-14",
+  "consignor_name": "ABC Logistics",
+  "consignor_mobile_numbers": "1321321111,1234123445",
+  "consignee_name": "XYZ Traders",
+  "consignee_mobile_numbers": ["9044396743", "9876543210"],
+  "transport_name": "Express Transport",
+  "transport_mobile_numbers": "9111222333,9444555666"
+}
+```
 
 ---
 DRAFT

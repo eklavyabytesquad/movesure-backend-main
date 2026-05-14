@@ -2,7 +2,7 @@ import logging
 from typing import Any
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger("movesure.bilty")
 
@@ -26,6 +26,38 @@ from app.services.challan.service import (
     add_bilty_to_challan,
 )
 
+
+# ══════════════════════════════════════════════════════════════
+# Helper functions for phone number validation
+# ══════════════════════════════════════════════════════════════
+
+def parse_mobile_numbers(value: str | list | None) -> list | None:
+    """
+    Parse mobile numbers from:
+    - Comma-separated string: "1234123415,1231132415" → ["1234123415", "1231132415"]
+    - List of strings: ["1234123415", "1231132415"] → ["1234123415", "1231132415"]
+    - None → None
+    
+    Strips whitespace from each number.
+    Filters out empty strings.
+    """
+    if value is None:
+        return None
+    
+    if isinstance(value, str):
+        # Parse comma-separated values
+        if not value.strip():
+            return None
+        numbers = [num.strip() for num in value.split(",") if num.strip()]
+        return numbers if numbers else None
+    
+    if isinstance(value, list):
+        # Already a list — just clean it up
+        numbers = [str(num).strip() for num in value if str(num).strip()]
+        return numbers if numbers else None
+    
+    return None
+
 router = APIRouter(prefix="/bilty", tags=["Bilty"])
 
 
@@ -46,18 +78,21 @@ class BiltyCreate(BaseModel):
     consignor_name:      str            = Field(..., min_length=1, max_length=255)
     consignor_gstin:     str | None     = Field(None, max_length=15)
     consignor_mobile:    str | None     = Field(None, max_length=15)
+    consignor_mobile_numbers: str | list | None = Field(None, description="Comma-separated or list of phone numbers")
 
     # Consignee snapshot
     consignee_id:        str | None     = None
     consignee_name:      str | None     = Field(None, max_length=255)
     consignee_gstin:     str | None     = Field(None, max_length=15)
     consignee_mobile:    str | None     = Field(None, max_length=15)
+    consignee_mobile_numbers: str | list | None = Field(None, description="Comma-separated or list of phone numbers")
 
     # Transport snapshot
     transport_id:        str | None     = None
     transport_name:      str | None     = Field(None, max_length=255)
     transport_gstin:     str | None     = Field(None, max_length=15)
     transport_mobile:    str | None     = Field(None, max_length=15)
+    transport_mobile_numbers: str | list | None = Field(None, description="Comma-separated or list of phone numbers")
 
     # Route
     from_city_id:        str | None     = None
@@ -105,6 +140,21 @@ class BiltyCreate(BaseModel):
     metadata:            dict[str, Any] = {}
     tracking_meta:       dict[str, Any] = {}
 
+    @field_validator("consignor_mobile_numbers", mode="before")
+    @classmethod
+    def parse_consignor_mobile_numbers(cls, v):
+        return parse_mobile_numbers(v)
+
+    @field_validator("consignee_mobile_numbers", mode="before")
+    @classmethod
+    def parse_consignee_mobile_numbers(cls, v):
+        return parse_mobile_numbers(v)
+
+    @field_validator("transport_mobile_numbers", mode="before")
+    @classmethod
+    def parse_transport_mobile_numbers(cls, v):
+        return parse_mobile_numbers(v)
+
 
 class BiltyUpdate(BaseModel):
     # Consignee snapshot (may be filled after booking)
@@ -112,12 +162,14 @@ class BiltyUpdate(BaseModel):
     consignee_name:        str | None     = Field(None, max_length=255)
     consignee_gstin:       str | None     = Field(None, max_length=15)
     consignee_mobile:      str | None     = Field(None, max_length=15)
+    consignee_mobile_numbers: str | list | None = Field(None, description="Comma-separated or list of phone numbers")
 
     # Transport snapshot
     transport_id:          str | None     = None
     transport_name:        str | None     = Field(None, max_length=255)
     transport_gstin:       str | None     = Field(None, max_length=15)
     transport_mobile:      str | None     = Field(None, max_length=15)
+    transport_mobile_numbers: str | list | None = Field(None, description="Comma-separated or list of phone numbers")
 
     # Route
     from_city_id:          str | None     = None
@@ -148,6 +200,16 @@ class BiltyUpdate(BaseModel):
     pf_charge:             float | None   = None
     other_charge:          float | None   = None
     local_charge:          float | None   = None
+
+    @field_validator("consignee_mobile_numbers", mode="before")
+    @classmethod
+    def parse_consignee_mobile_numbers(cls, v):
+        return parse_mobile_numbers(v)
+
+    @field_validator("transport_mobile_numbers", mode="before")
+    @classmethod
+    def parse_transport_mobile_numbers(cls, v):
+        return parse_mobile_numbers(v)
     discount_id:           str | None     = None
     discount_percentage:   float | None   = Field(None, ge=0, le=100)
     discount_amount:       float | None   = Field(None, ge=0)
