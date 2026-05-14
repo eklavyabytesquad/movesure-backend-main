@@ -21,6 +21,38 @@ from app.services.bilty_setting.service import (
     create_discount, list_discounts, get_discount, update_discount, delete_discount,
 )
 
+
+# ══════════════════════════════════════════════════════════════
+# Helper functions for phone number validation
+# ══════════════════════════════════════════════════════════════
+
+def parse_mobile_numbers(value: str | list | None) -> list | None:
+    """
+    Parse mobile numbers from:
+    - Comma-separated string: "1234123415,1231132415" → ["1234123415", "1231132415"]
+    - List of strings: ["1234123415", "1231132415"] → ["1234123415", "1231132415"]
+    - None → None
+    
+    Strips whitespace from each number.
+    Filters out empty strings.
+    """
+    if value is None:
+        return None
+    
+    if isinstance(value, str):
+        # Parse comma-separated values
+        if not value.strip():
+            return None
+        numbers = [num.strip() for num in value.split(",") if num.strip()]
+        return numbers if numbers else None
+    
+    if isinstance(value, list):
+        # Already a list — just clean it up
+        numbers = [str(num).strip() for num in value if str(num).strip()]
+        return numbers if numbers else None
+    
+    return None
+
 router = APIRouter(prefix="/bilty-setting", tags=["Bilty Settings"])
 
 
@@ -47,8 +79,14 @@ class ConsignorCreate(BaseModel):
     pincode:          str | None     = Field(None, max_length=10)
     mobile:           str | None     = Field(None, max_length=15)
     alternate_mobile: str | None     = Field(None, max_length=15)
+    mobile_numbers:   str | list | None = Field(None, description="Comma-separated or list of phone numbers, e.g. '1234123415,1231132415'")
     email:            str | None     = Field(None, max_length=255)
     metadata:         dict[str, Any] = {}
+
+    @field_validator("mobile_numbers", mode="before")
+    @classmethod
+    def parse_mobile_numbers_field(cls, v):
+        return parse_mobile_numbers(v)
 
 
 class ConsignorUpdate(BaseModel):
@@ -62,9 +100,15 @@ class ConsignorUpdate(BaseModel):
     pincode:          str | None     = Field(None, max_length=10)
     mobile:           str | None     = Field(None, max_length=15)
     alternate_mobile: str | None     = Field(None, max_length=15)
+    mobile_numbers:   str | list | None = Field(None, description="Comma-separated or list of phone numbers, e.g. '1234123415,1231132415'")
     email:            str | None     = Field(None, max_length=255)
     is_active:        bool | None    = None
     metadata:         dict[str, Any] | None = None
+
+    @field_validator("mobile_numbers", mode="before")
+    @classmethod
+    def parse_mobile_numbers_field(cls, v):
+        return parse_mobile_numbers(v)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -82,8 +126,14 @@ class ConsigneeCreate(BaseModel):
     pincode:          str | None     = Field(None, max_length=10)
     mobile:           str | None     = Field(None, max_length=15)
     alternate_mobile: str | None     = Field(None, max_length=15)
+    mobile_numbers:   str | list | None = Field(None, description="Comma-separated or list of phone numbers, e.g. '1234123415,1231132415'")
     email:            str | None     = Field(None, max_length=255)
     metadata:         dict[str, Any] = {}
+
+    @field_validator("mobile_numbers", mode="before")
+    @classmethod
+    def parse_mobile_numbers_field(cls, v):
+        return parse_mobile_numbers(v)
 
 
 class ConsigneeUpdate(BaseModel):
@@ -97,9 +147,15 @@ class ConsigneeUpdate(BaseModel):
     pincode:          str | None     = Field(None, max_length=10)
     mobile:           str | None     = Field(None, max_length=15)
     alternate_mobile: str | None     = Field(None, max_length=15)
+    mobile_numbers:   str | list | None = Field(None, description="Comma-separated or list of phone numbers, e.g. '1234123415,1231132415'")
     email:            str | None     = Field(None, max_length=255)
     is_active:        bool | None    = None
     metadata:         dict[str, Any] | None = None
+
+    @field_validator("mobile_numbers", mode="before")
+    @classmethod
+    def parse_mobile_numbers_field(cls, v):
+        return parse_mobile_numbers(v)
 
 
 # ══════════════════════════════════════════════════════════════

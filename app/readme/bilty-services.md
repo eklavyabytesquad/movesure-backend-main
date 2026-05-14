@@ -36,10 +36,28 @@ All operations are automatically scoped to the caller's `company_id` and `branch
 | `city` | string | |
 | `state` | string | |
 | `pincode` | string | |
-| `mobile` | string | |
-| `alternate_mobile` | string | |
+| `mobile` | string | Single mobile number (max 15 chars) |
+| `alternate_mobile` | string | Single alternate mobile (max 15 chars) |
+| `mobile_numbers` | array of strings OR comma-separated string | Multiple phone numbers. Can be sent as: `["1234123415", "1231132415"]` (array) or `"1234123415,1231132415"` (comma-separated string). Whitespace is automatically trimmed. Stored as JSON array. |
 | `email` | string | |
 | `metadata` | object | free-form JSON |
+
+**Example — multiple mobile numbers:**
+```json
+POST /v1/bilty-setting/consignors
+{
+  "consignor_name": "ABC Logistics",
+  "mobile_numbers": "1234123415,1231132415"
+}
+```
+
+```json
+POST /v1/bilty-setting/consignors
+{
+  "consignor_name": "ABC Logistics",
+  "mobile_numbers": ["1234123415", "1231132415"]
+}
+```
 
 ---
 
@@ -53,7 +71,23 @@ All operations are automatically scoped to the caller's `company_id` and `branch
 | `PATCH` | `/v1/bilty-setting/consignees/{consignee_id}` | Update consignee fields |
 | `DELETE` | `/v1/bilty-setting/consignees/{consignee_id}` | Soft-delete |
 
-Fields are identical to Consignor — use `consignee_name` as the name field.
+Fields are identical to Consignor — use `consignee_name` as the name field. Supports the same `mobile_numbers` field for storing multiple phone numbers:
+
+| Field | Type | Notes |
+|---|---|---|
+| `consignee_name` | string (required) | min 2 chars |
+| `gstin` | string | max 15 chars |
+| `pan` | string | max 10 chars |
+| `aadhar` | string | max 12 chars |
+| `address` | string | |
+| `city` | string | |
+| `state` | string | |
+| `pincode` | string | |
+| `mobile` | string | Single mobile number (max 15 chars) |
+| `alternate_mobile` | string | Single alternate mobile (max 15 chars) |
+| `mobile_numbers` | array of strings OR comma-separated string | Multiple phone numbers. Can be sent as: `["1234123415", "1231132415"]` (array) or `"1234123415,1231132415"` (comma-separated string). Whitespace is automatically trimmed. Stored as JSON array. |
+| `email` | string | |
+| `metadata` | object | free-form JSON |
 
 ---
 
